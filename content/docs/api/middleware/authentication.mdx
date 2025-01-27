@@ -1,0 +1,186 @@
+---
+title: Authentication
+description: Secure your API with Unkey authentication and alternatives
+---
+
+import { Callout } from 'fumadocs-ui/components/callout'
+import { Steps } from 'fumadocs-ui/components/steps'
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs'
+
+## Overview
+
+TusFlow uses [Unkey](https://unkey.dev) as its primary authentication provider, offering enterprise-grade API key management. The authentication middleware validates API keys and manages access control across your upload infrastructure.
+
+<Callout type="info">
+  Unkey provides features like key analytics, ratelimiting, and permissions management out of the box.
+</Callout>
+
+## Implementation
+
+TusFlow's authentication middleware is built on Unkey's Hono integration:
+
+```typescript
+import { unkey } from '@unkey/hono';
+import type { Context, Next } from 'hono';
+
+export function authentication(config: AuthConfig = {}) {
+    return async (c: Context, next: Next) => {
+        // Check if path is excluded from authentication
+        const path = new URL(c.req.url).pathname;
+        if (isPathExcluded(path, config.excludePaths)) {
+            return next();
+        }
+
+        const { UNKEY_API_ID } = env<Bindings>(c);
+        if (!UNKEY_API_ID) {
+            return new Response('Server configuration error', { status: 500 });
+        }
+
+        const middleware = unkey({
+            apiId: UNKEY_API_ID,
+            onError: config.onError || defaultErrorHandler,
+            handleInvalidKey: config.handleInvalidKey || defaultInvalidKeyHandler
+        });
+
+        return middleware(c, next);
+    };
+}
+```
+
+## Configuration
+
+Configure authentication in your security middleware:
+
+```typescript
+// Create authentication middleware with public paths excluded
+const authMiddleware = authentication({
+    excludePaths: ['/health'], // Add your public paths here
+});
+
+// Combine with other security measures
+export const securityMiddleware = every(
+    secureHeadersMiddleware,
+    corsMiddleware,
+    authMiddleware,
+    csrfProtectionMiddleware,
+    rateLimitMiddleware
+);
+```
+
+## Features
+
+1. **API Key Management**
+   - Automatic key validation
+   - Usage analytics
+   - Key revocation
+   - Permissions management
+
+2. **Security Features**
+   - Path-based exclusions
+   - Custom error handling
+   - Invalid key handling
+   - Automatic headers
+
+3. **Integration Benefits**
+   - Simple setup
+   - Built-in monitoring
+   - Scalable solution
+   - Enterprise support
+
+## Alternative Authentication Options
+
+<Callout type="info">
+  While Unkey is recommended, TusFlow supports other authentication methods through Hono's built-in middleware.
+</Callout>
+
+### Bearer Authentication
+
+Using [Hono's Bearer Auth](https://hono.dev/docs/middleware/builtin/bearer-auth):
+
+```typescript
+import { bearerAuth } from 'hono/bearer-auth'
+
+const app = new Hono()
+const token = 'your-secure-token'
+
+app.use('/api/*', bearerAuth({ token }))
+
+// Multiple tokens
+app.use('/api/*', bearerAuth({ 
+  token: ['read-token', 'write-token'] 
+}))
+
+// Custom verification
+app.use('/api/*', bearerAuth({
+  verifyToken: async (token, c) => {
+    return await validateToken(token)
+  }
+}))
+```
+
+### Basic Authentication
+
+Using [Hono's Basic Auth](https://hono.dev/docs/middleware/builtin/basic-auth):
+
+```typescript
+import { basicAuth } from 'hono/basic-auth'
+
+const app = new Hono()
+
+app.use('/api/*', basicAuth({
+  username: 'admin',
+  password: 'secure-password'
+}))
+
+// Multiple users
+app.use('/api/*', basicAuth(
+  {
+    username: 'admin',
+    password: 'admin-pass'
+  },
+  {
+    username: 'user',
+    password: 'user-pass'
+  }
+))
+```
+
+## Best Practices
+
+<Steps>
+  ### Configure Authentication
+  - Set up Unkey API ID
+  - Define excluded paths
+  - Configure error handlers
+  - Set up monitoring
+
+  ### Manage API Keys
+  - Implement key rotation
+  - Set appropriate permissions
+  - Monitor key usage
+  - Handle revocations
+
+  ### Security Considerations
+  - Use HTTPS only
+  - Implement rate limiting
+  - Log authentication attempts
+  - Monitor for abuse
+</Steps>
+
+## Example Usage
+
+  ```typescript index.ts
+  import { Hono } from 'hono';
+  import { authentication } from '@/middleware/authentication';
+
+  const app = new Hono();
+
+  // Apply authentication to all routes
+  app.use('*', authMiddleware);
+
+  export default app;
+  ```
+
+<Callout type="warning">
+  Always use secure methods to store and transmit API keys. Never expose keys in client-side code.
+</Callout>
